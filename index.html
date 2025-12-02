@@ -403,7 +403,7 @@
         <div class="top-bar-premium">
             <div class="container-premium">
                 <div class="top-bar-content">
-                    <p class="announcement">✨ Frete Grátis em Compras Acima de R$ 299</p>
+                    <p class="announcement">✨Seu estilo merece peças que falem por você</p>
                     <div class="top-actions">
                         <a href="#" id="headerInstagram" class="top-link" target="_blank">
                             <span>📷 Instagram</span>
@@ -679,72 +679,202 @@
 <script src="loja-config.js"></script>
 <script src="fcm-register.js"></script>
     
-    <script>
+        <script>
     // ===================================
-    // PWA INSTALL PROMPT
+    // DETECTAR APP INSTALADO
     // ===================================
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches || 
+                         window.navigator.standalone === true;
+    
     let deferredPrompt = null;
-    let installPromptShown = localStorage.getItem('installPromptShown');
 
-    // Capturar evento de instalação
+    console.log('📱 App standalone?', isStandalone);
+
+    // ===================================
+    // LIMPAR FLAGS PROBLEMÁTICAS
+    // ===================================
+    if (!isStandalone) {
+        // Se NÃO está instalado, limpar flag de "já mostrou"
+        localStorage.removeItem('installPromptShown');
+        console.log('🧹 Flags limpas');
+    }
+
+    // ===================================
+    // CAPTURAR EVENTO beforeinstallprompt
+    // ===================================
     window.addEventListener('beforeinstallprompt', (e) => {
-        console.log('📲 Prompt de instalação capturado');
+        console.log('📲 beforeinstallprompt CAPTURADO!');
         e.preventDefault();
         deferredPrompt = e;
         
-        // Mostrar modal automaticamente após 3 segundos (apenas 1x)
-        if (!installPromptShown) {
+        // Mostrar IMEDIATAMENTE após splash
+        if (!isStandalone) {
+            console.log('✅ Mostrando modal instalação em 2.5s...');
             setTimeout(() => {
-                showInstallPrompt();
-            }, 3000);
+                showInstallModal();
+            }, 2500);
         }
     });
 
-    // Mostrar modal de instalação
-    function showInstallPrompt() {
+    // ===================================
+    // MOSTRAR MODAL INSTALAÇÃO
+    // ===================================
+    function showInstallModal() {
+        if (isStandalone) {
+            console.log('⏭️ App já instalado, pulando');
+            return;
+        }
+
         const modal = document.getElementById('installPromptModal');
-        if (modal && deferredPrompt) {
+        if (!modal) {
+            console.error('❌ Modal #installPromptModal não encontrado no HTML!');
+            return;
+        }
+
+        if (deferredPrompt) {
+            console.log('📲 MOSTRANDO MODAL DE INSTALAÇÃO');
+            modal.classList.add('show');
+        } else {
+            console.warn('⚠️ deferredPrompt não existe. Mostrando mesmo assim...');
             modal.classList.add('show');
         }
     }
 
-    // Botão Aceitar Instalação
-    document.getElementById('installAcceptBtn').addEventListener('click', async () => {
-        const modal = document.getElementById('installPromptModal');
+    // ===================================
+    // FORÇAR MOSTRAR INSTALAÇÃO (fallback se evento não disparar)
+    // ===================================
+    window.addEventListener('load', () => {
+        if (!isStandalone) {
+            // Se após 4 segundos o modal ainda não apareceu, forçar
+            setTimeout(() => {
+                const modal = document.getElementById('installPromptModal');
+                if (modal && !modal.classList.contains('show')) {
+                    console.warn('⚠️ beforeinstallprompt NÃO disparou. Forçando modal...');
+                    modal.classList.add('show');
+                }
+            }, 4000);
+        }
+    });
+
+    // ===================================
+    // BOTÃO INSTALAR
+    // ===================================
+    document.addEventListener('DOMContentLoaded', () => {
+        const btnInstall = document.getElementById('installAcceptBtn');
+        const btnDecline = document.getElementById('installDeclineBtn');
+
+        if (btnInstall) {
+            btnInstall.addEventListener('click', async () => {
+                const modal = document.getElementById('installPromptModal');
+                modal.classList.remove('show');
+                
+                if (!deferredPrompt) {
+                    console.warn('⚠️ deferredPrompt não existe');
+                    alert('⚠️ Instalação não disponível automaticamente.\n\nPara instalar:\n\nChrome: Menu (⋮) → Instalar app\niOS Safari: Compartilhar (⬆️) → Adicionar à tela inicial');
+                    
+                    // Marcar como "tentou instalar" e pedir notificação
+                    localStorage.setItem('install_attempted', 'true');
+                    setTimeout(() => pedirNotificacao(), 1000);
+                    return;
+                }
+
+                console.log('📥 Solicitando instalação...');
+                
+                try {
+                    deferredPrompt.prompt();
+                    const { outcome } = await deferredPrompt.userChoice;
+                    
+                    console.log('📊 Resultado:', outcome);
+                    
+                    if (outcome === 'accepted') {
+                        console.log('✅ Instalado!');
+                        alert('✅ App instalado com sucesso!');
+                        localStorage.setItem('app_installed', 'true');
+                        
+                        // Pedir notificação após instalar
+                        setTimeout(() => pedirNotificacao(), 2000);
+                    } else {
+                        console.log('❌ Recusado');
+                        alert('ℹ️ Instalação cancelada');
+                    }
+                } catch (error) {
+                    console.error('Erro:', error);
+                    alert('❌ Erro ao instalar');
+                }
+                
+                deferredPrompt = null;
+            });
+        }
+
+        if (btnDecline) {
+            btnDecline.addEventListener('click', () => {
+                const modal = document.getElementById('installPromptModal');
+                modal.classList.remove('show');
+                console.log('❌ Instalação recusada');
+                localStorage.setItem('install_declined', 'true');
+            });
+        }
+    });
+
+    // ===================================
+    // PEDIR NOTIFICAÇÃO
+    // ===================================
+    function pedirNotificacao() {
+        const jaRegistrou = localStorage.getItem('fcm_registered') === 'true';
+        const jaRecusou = localStorage.getItem('fcm_refused') === 'true';
         
-        if (!deferredPrompt) {
-            alert('Instalação não disponível no momento. Tente pelo menu do navegador.');
-            modal.classList.remove('show');
+        if (jaRegistrou || jaRecusou) {
+            console.log('⏭️ Notificação já resolvida');
             return;
         }
 
-        modal.classList.remove('show');
-        deferredPrompt.prompt();
-        
-        const { outcome } = await deferredPrompt.userChoice;
-        console.log('Resultado instalação:', outcome);
-        
-        if (outcome === 'accepted') {
-            console.log('✅ App instalado!');
-            showNotification('✅ App instalado com sucesso!');
+        if (!('Notification' in window)) {
+            console.warn('⚠️ Notificações não suportadas');
+            return;
         }
+
+        console.log('🔔 Pedindo dados para notificação...');
+
+        const nome = prompt('📝 Digite seu nome para receber promoções exclusivas:');
+        if (!nome || nome.trim() === '') {
+            console.log('❌ Nome não informado');
+            localStorage.setItem('fcm_refused', 'true');
+            return;
+        }
+
+        const email = prompt('📧 Digite seu email:');
+        if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+            alert('❌ Email inválido');
+            localStorage.setItem('fcm_refused', 'true');
+            return;
+        }
+
+        console.log('🔔 Registrando FCM com:', nome, email);
         
-        deferredPrompt = null;
-        localStorage.setItem('installPromptShown', 'true');
-    });
+        if (typeof window.registerFCMFromModal === 'function') {
+            window.registerFCMFromModal(nome.trim(), email.trim())
+                .then(() => {
+                    alert('✅ Notificações ativadas! Você receberá ofertas exclusivas.');
+                })
+                .catch(err => {
+                    console.error('Erro FCM:', err);
+                    alert('❌ Erro ao ativar notificações');
+                });
+        } else {
+            console.warn('⚠️ registerFCMFromModal não disponível');
+        }
+    }
 
-    // Botão Recusar
-    document.getElementById('installDeclineBtn').addEventListener('click', () => {
-        const modal = document.getElementById('installPromptModal');
-        modal.classList.remove('show');
-        localStorage.setItem('installPromptShown', 'true');
-    });
-
-    // Detectar quando app é instalado
+    // ===================================
+    // EVENTO APP INSTALADO
+    // ===================================
     window.addEventListener('appinstalled', () => {
-        console.log('✅ PWA instalado com sucesso!');
-        showNotification('✅ App instalado! Acesse pela tela inicial');
-        localStorage.setItem('installPromptShown', 'true');
+        console.log('✅ App instalado via evento!');
+        localStorage.setItem('app_installed', 'true');
+        alert('✅ App instalado! Você pode acessá-lo pela tela inicial.');
+        
+        // Pedir notificação
+        setTimeout(() => pedirNotificacao(), 1500);
     });
 
     // ===================================
@@ -753,8 +883,8 @@
     if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
             navigator.serviceWorker.register('./service-worker.js')
-                .then(reg => console.log('✅ SW registrado:', reg.scope))
-                .catch(err => console.error('❌ SW erro:', err));
+                .then(reg => console.log('✅ SW:', reg.scope))
+                .catch(err => console.error('❌ SW:', err));
         });
     }
 
@@ -766,74 +896,140 @@
             const splash = document.getElementById('splashScreen');
             if (splash) {
                 splash.style.display = 'none';
+                console.log('🎬 Splash fechado');
             }
         }, 2000);
     });
 
     // ===================================
-    // NEWSLETTER
+    // NEWSLETTER FOOTER
     // ===================================
     function setupNewsletterForm() {
         const form = document.getElementById('newsletterForm');
+        if (!form) return;
+
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
-            const email = form.querySelector('input[type="email"]').value;
+            const emailInput = form.querySelector('input[type="email"]');
+            const email = emailInput.value.trim();
+            
+            if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+                alert('❌ E-mail inválido');
+                return;
+            }
             
             try {
+                if (typeof firebase === 'undefined') throw new Error('Firebase off');
+                const db = firebase.firestore();
+                
+                const exists = await db.collection('newsletter').where('email', '==', email).limit(1).get();
+                
+                if (!exists.empty) {
+                    alert('ℹ️ E-mail já cadastrado!');
+                    form.reset();
+                    return;
+                }
+
                 await db.collection('newsletter').add({
                     email: email,
-                    subscribedAt: firebase.firestore.FieldValue.serverTimestamp()
+                    subscribedAt: firebase.firestore.FieldValue.serverTimestamp(),
+                    source: 'footer'
                 });
                 
-                showNotification('✅ Cadastro realizado! Verifique seu e-mail.');
+                alert('✅ Cadastrado!');
                 form.reset();
             } catch (error) {
-                console.error('Erro ao cadastrar:', error);
-                showNotification('❌ Erro ao cadastrar. Tente novamente.');
+                console.error('Erro:', error);
+                alert('❌ Erro');
             }
         });
     }
 
-    // ===================================
-    // ATUALIZAR CONTADOR CARRINHO BOTTOM NAV
-    // ===================================
     function updateCartCount() {
-        const cart = getCart();
-        const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
-        
-        // Header
-        const cartCountElements = document.querySelectorAll('#cartCount, .cart-count-premium');
-        cartCountElements.forEach(element => {
-            if (element) element.textContent = totalItems;
-        });
+        try {
+            const cart = typeof getCart === 'function' ? getCart() : [];
+            const total = cart.reduce((sum, item) => sum + item.quantity, 0);
+            
+            document.querySelectorAll('#cartCount, .cart-count-premium').forEach(el => {
+                if (el) el.textContent = total;
+            });
 
-        // Bottom Nav
-        const bottomBadge = document.getElementById('cartCountBottom');
-        if (bottomBadge) {
-            if (totalItems > 0) {
-                bottomBadge.textContent = totalItems;
-                bottomBadge.style.display = 'block';
-            } else {
-                bottomBadge.style.display = 'none';
+            const badge = document.getElementById('cartCountBottom');
+            if (badge) {
+                badge.style.display = total > 0 ? 'block' : 'none';
+                if (total > 0) badge.textContent = total;
             }
+        } catch (error) {}
+    }
+
+    function setupMobileMenu() {
+        const toggle = document.getElementById('mobileMenuToggle');
+        const nav = document.getElementById('mainNav');
+        if (toggle && nav) {
+            toggle.addEventListener('click', () => {
+                nav.classList.toggle('active');
+                toggle.classList.toggle('active');
+            });
         }
     }
 
-    // ===================================
-    // INICIALIZAÇÃO
-    // ===================================
     document.addEventListener('DOMContentLoaded', async () => {
-        await loadStoreSettings();
-        await loadFeaturedProducts();
-        await loadActivePromotions();
-        await loadCollections();
+        console.log('🚀 Inicializando...');
+        console.log('📱 Standalone?', isStandalone);
+        
+        try {
+            if (typeof loadStoreSettings === 'function') await loadStoreSettings();
+            if (typeof loadFeaturedProducts === 'function') await loadFeaturedProducts();
+            if (typeof loadActivePromotions === 'function') await loadActivePromotions();
+            if (typeof loadCollections === 'function') await loadCollections();
+        } catch (error) {
+            console.error('Erro:', error);
+        }
+        
         setupMobileMenu();
         updateCartCount();
         setupNewsletterForm();
         
-        console.log('🚀 App Aya Acessórios carregado com sucesso!');
+        console.log('✅ App carregado!');
     });
+
+    // ===================================
+    // DEBUG
+    // ===================================
+    window.forceInstallModal = () => {
+        const modal = document.getElementById('installPromptModal');
+        if (modal) {
+            modal.classList.add('show');
+            console.log('✅ Modal forçado!');
+        } else {
+            console.error('❌ Modal não encontrado!');
+        }
+    };
+
+    window.resetAll = () => {
+        localStorage.clear();
+        console.log('🔄 Tudo limpo! Recarregando...');
+        location.reload();
+    };
+
+    window.checkStatus = () => {
+        console.log('📊 STATUS:', {
+            standalone: isStandalone,
+            deferredPrompt: !!deferredPrompt,
+            localStorage: {
+                installPromptShown: localStorage.getItem('installPromptShown'),
+                app_installed: localStorage.getItem('app_installed'),
+                fcm_registered: localStorage.getItem('fcm_registered')
+            }
+        });
+    };
+    
+    console.log('💡 Comandos:');
+    console.log('   forceInstallModal() - forçar modal');
+    console.log('   checkStatus() - ver status');
+    console.log('   resetAll() - limpar tudo');
     </script>
 </body>
-
 </html>
+
+
